@@ -13,9 +13,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: (() => {
     try {
       const stored = localStorage.getItem('mittal_store_auth_user')
-      return stored ? JSON.parse(stored) : { id: 'user-default', email: 'admin@mittalelectrical.com' }
+      return stored ? JSON.parse(stored) : null
     } catch {
-      return { id: 'user-default', email: 'admin@mittalelectrical.com' }
+      return null
     }
   })(),
   loading: false,

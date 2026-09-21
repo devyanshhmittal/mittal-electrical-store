@@ -9,8 +9,8 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNotify }) => {
-  const [email, setEmail] = useState('admin@mittalelectrical.com')
-  const [password, setPassword] = useState('password123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const setUser = useAuthStore((state) => state.setUser)
   const navigate = useNavigate()
@@ -117,15 +117,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNotify }) => {
               type="button"
               onClick={handleCreateAccount}
               disabled={loading}
-              className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors"
+              className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors cursor-pointer"
             >
-              Create New Admin Account
+              Create New Store Admin Account
             </button>
           </div>
 
-          <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-600 font-medium">
+          <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium">
             <ShieldCheck size={14} className="text-emerald-500" />
-            <span>Standalone Local Storage — No Cloud Database Required</span>
+            <span>Secure Store Authorization Protected</span>
           </div>
         </div>
 
