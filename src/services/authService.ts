@@ -40,52 +40,41 @@ export const authService = {
 
   async signIn(email: string, password: string): Promise<{ user: User }> {
     if (!email || !password) {
-      throw new Error('Please enter both email and password')
+      throw new Error('Please enter both email and password.')
     }
 
     const cleanEmail = email.trim().toLowerCase()
 
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: password
-      })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password: password
+    })
 
-      if (error) {
-        // If email confirmation is not yet completed in Supabase, still allow valid shop owner login
-        if (error.message.toLowerCase().includes('email not confirmed')) {
-          const user: User = {
-            id: `user-${cleanEmail}`,
-            email: cleanEmail
-          }
-          localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
-          return { user }
+    if (error) {
+      // If email confirmation is pending in Supabase for this registered user
+      if (error.message.toLowerCase().includes('email not confirmed')) {
+        const user: User = {
+          id: `user-${cleanEmail}`,
+          email: cleanEmail
         }
-
-        if (error.message.toLowerCase().includes('invalid login credentials')) {
-          throw new Error('Invalid email or password. Please try again.')
-        }
-
-        throw new Error(error.message)
+        localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
+        return { user }
       }
 
-      const user: User = {
-        id: data?.user?.id || `user-${cleanEmail}`,
-        email: data?.user?.email || cleanEmail
-      }
-      localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
-      return { user }
-    } catch (e: any) {
-      if (e.message.includes('Invalid email or password')) {
-        throw e
-      }
-      const user: User = {
-        id: `user-${cleanEmail}`,
-        email: cleanEmail
-      }
-      localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
-      return { user }
+      // Strictly reject invalid credentials
+      throw new Error('Invalid email or password. Access denied.')
     }
+
+    if (!data?.user) {
+      throw new Error('Authentication failed. Access denied.')
+    }
+
+    const user: User = {
+      id: data.user.id,
+      email: data.user.email || cleanEmail
+    }
+    localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
+    return { user }
   },
 
   async signOut(): Promise<void> {
