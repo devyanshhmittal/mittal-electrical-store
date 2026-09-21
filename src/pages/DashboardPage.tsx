@@ -20,12 +20,15 @@ export const DashboardPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = async () => {
+    setLoading(true)
+    setFetchError(null)
     try {
       const [prods, cats] = await Promise.all([
         productService.getAll(),
@@ -33,6 +36,9 @@ export const DashboardPage: React.FC = () => {
       ])
       setProducts(prods)
       setCategories(cats)
+    } catch (err: any) {
+      console.error('Failed to load dashboard data:', err)
+      setFetchError(err?.message || 'Failed to connect to database')
     } finally {
       setLoading(false)
     }
@@ -70,9 +76,36 @@ export const DashboardPage: React.FC = () => {
     )
   }
 
+  if (fetchError) {
+    return (
+      <SidebarLayout>
+        <div className="h-96 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-white text-lg font-bold ml-3">{fetchError}</div>
+        </div>
+      </SidebarLayout>
+    )
+  }
+
   return (
     <SidebarLayout>
       <div className="space-y-8">
+        {/* Error Alert if any */}
+        {fetchError && (
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-4 text-rose-800 text-xs font-semibold">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="shrink-0 text-rose-600" />
+              <span>Database Connection Notice: {fetchError}</span>
+            </div>
+            <button
+              onClick={loadData}
+              className="px-3 py-1.5 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition-colors shrink-0"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
+
         {/* Header Banner */}
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden border border-slate-800">
           <div className="space-y-2 relative z-10">
