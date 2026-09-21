@@ -1,5 +1,5 @@
+import { supabase } from './supabase'
 import { Product, StockHistory } from '../types'
-import { getStoredData, saveStoredData, initialProducts, initialCategories, initialBrands, initialCategorySpecs, initialProductSpecs, initialStockHistory, generateId } from './mockDB'
 
 export interface ProductFilterOptions {
   categoryId?: string
@@ -11,47 +11,40 @@ export interface ProductFilterOptions {
 
 export const productService = {
   async getAll(filters?: ProductFilterOptions): Promise<Product[]> {
-    const rawProducts = getStoredData<Product[]>('products', initialProducts)
-    const categories = getStoredData('categories', initialCategories)
-    const brands = getStoredData('brands', initialBrands)
-    const prodSpecs = getStoredData('product_specs', initialProductSpecs)
-    const catSpecs = getStoredData('category_specs', initialCategorySpecs)
+    let query = supabase
+      .from('products')
+      .select(`
+        *,
+        category:categories(*),
+        brand:brands(*),
+        specifications:product_specifications(
+          *,
+          specification:category_specifications(*)
+        )
+      `)
 
-    // Attach relations
-    let products: Product[] = rawProducts.map(p => {
-      const category = categories.find(c => c.id === p.category_id)
-      const brand = brands.find(b => b.id === p.brand_id)
-      const specifications = prodSpecs
-        .filter(ps => ps.product_id === p.id)
-        .map(ps => ({
-          ...ps,
-          specification: catSpecs.find(cs => cs.id === ps.specification_id)
-        }))
-
-      return {
-        ...p,
-        category,
-        brand,
-        specifications
-      }
-    })
-
-    // Filter by Category
     if (filters?.categoryId) {
-      products = products.filter(p => p.category_id === filters.categoryId)
+      query = query.eq('category_id', filters.categoryId)
     }
 
-    // Filter by Brand
     if (filters?.brandId) {
-      products = products.filter(p => p.brand_id === filters.brandId)
+      query = query.eq('brand_id', filters.brandId)
     }
 
-    // Filter by Colour
     if (filters?.colour) {
-      products = products.filter(p => p.colour.toLowerCase() === filters.colour?.toLowerCase())
+      query = query.ilike('colour', filters.colour.trim())
     }
 
-    // Filter by Stock Status
+    const { data, error } = await query.order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error loading products from Supabase:', error)
+      throw new Error(error.message)
+    }
+
+    let products = (data || []) as Product[]
+
+    // Client-side filtering for stock status
     if (filters?.stockStatus && filters.stockStatus !== 'all') {
       products = products.filter(p => {
         if (filters.stockStatus === 'out_of_stock') return p.quantity === 0
@@ -61,7 +54,7 @@ export const productService = {
       })
     }
 
-    // Filter by Search (Name, Brand, Model, Colour)
+    // Client-side filtering for search query
     if (filters?.search && filters.search.trim() !== '') {
       const q = filters.search.toLowerCase().trim()
       products = products.filter(p =>
@@ -72,113 +65,172 @@ export const productService = {
       )
     }
 
-    return products.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return products
   },
 
   async getById(id: string): Promise<Product> {
-    const products = await this.getAll()
-    const product = products.find(p => p.id === id)
-    if (!product) throw new Error('Product not found')
-    return product
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        category:categories(*),
+        brand:brands(*),
+        specifications:product_specifications(
+          *,
+          specification:category_specifications(*)
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Product not found')
+    }
+
+    return data as Product
   },
 
   async checkDuplicate(categoryId: string, brandId: string, modelNumber: string, colour: string, excludeId?: string): Promise<Product | null> {
-    const rawProducts = getStoredData<Product[]>('products', initialProducts)
-    const match = rawProducts.find(p =>
-      p.category_id === categoryId &&
-      p.brand_id === brandId &&
-      p.model_number.toLowerCase().trim() === modelNumber.toLowerCase().trim() &&
-      p.colour.toLowerCase().trim() === colour.toLowerCase().trim() &&
-      p.id !== excludeId
-    )
-    return match || null
+    let query = supabase
+      .from('products')
+      .select('*')
+      .eq('category_id', categoryId)
+      .eq('brand_id', brandId)
+      .ilike('model_number', modelNumber.trim())
+      .ilike('colour', colour.trim())
+
+    if (excludeId) {
+      query = query.neq('id', excludeId)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('Error checking duplicate:', error)
+      return null
+    }
+
+    return (data && data.length > 0) ? (data[0] as Product) : null
   },
 
   async create(productData: Omit<Product, 'id' | 'created_at' | 'updated_at' | 'category' | 'brand' | 'specifications'>): Promise<Product> {
-    const rawProducts = getStoredData<Product[]>('products', initialProducts)
-    const now = new Date().toISOString()
-    const newProduct: Product = {
-      ...productData,
-      id: generateId(),
-      created_at: now,
-      updated_at: now
-    }
-    rawProducts.push(newProduct)
-    saveStoredData('products', rawProducts)
+    const { data, error } = await supabase
+      .from('products')
+      .insert([{
+        product_name: productData.product_name,
+        category_id: productData.category_id,
+        brand_id: productData.brand_id,
+        model_number: productData.model_number,
+        colour: productData.colour,
+        quantity: productData.quantity,
+        purchase_price: productData.purchase_price,
+        selling_price: productData.selling_price,
+        low_stock_threshold: productData.low_stock_threshold || 5,
+        image_url: productData.image_url || ''
+      }])
+      .select()
+      .single()
 
-    // Record stock history
-    if (newProduct.quantity > 0) {
-      const history = getStoredData<StockHistory[]>('stock_history', initialStockHistory)
-      history.unshift({
-        id: generateId(),
-        product_id: newProduct.id,
-        product_name: newProduct.product_name,
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create product')
+    }
+
+    // Record initial stock history
+    if (data.quantity > 0) {
+      await supabase.from('stock_history').insert([{
+        product_id: data.id,
+        product_name: data.product_name,
         previous_quantity: 0,
-        change_quantity: newProduct.quantity,
-        new_quantity: newProduct.quantity,
-        created_at: now
-      })
-      saveStoredData('stock_history', history)
+        change_quantity: data.quantity,
+        new_quantity: data.quantity
+      }])
     }
 
-    return this.getById(newProduct.id)
+    return this.getById(data.id)
   },
 
   async update(id: string, productData: Partial<Product>): Promise<Product> {
-    const rawProducts = getStoredData<Product[]>('products', initialProducts)
-    const index = rawProducts.findIndex(p => p.id === id)
-    if (index === -1) throw new Error('Product not found')
-
-    rawProducts[index] = {
-      ...rawProducts[index],
-      ...productData,
+    const payload: Record<string, any> = {
       updated_at: new Date().toISOString()
     }
-    saveStoredData('products', rawProducts)
+
+    if (productData.product_name !== undefined) payload.product_name = productData.product_name
+    if (productData.category_id !== undefined) payload.category_id = productData.category_id
+    if (productData.brand_id !== undefined) payload.brand_id = productData.brand_id
+    if (productData.model_number !== undefined) payload.model_number = productData.model_number
+    if (productData.colour !== undefined) payload.colour = productData.colour
+    if (productData.quantity !== undefined) payload.quantity = productData.quantity
+    if (productData.purchase_price !== undefined) payload.purchase_price = productData.purchase_price
+    if (productData.selling_price !== undefined) payload.selling_price = productData.selling_price
+    if (productData.low_stock_threshold !== undefined) payload.low_stock_threshold = productData.low_stock_threshold
+    if (productData.image_url !== undefined) payload.image_url = productData.image_url
+
+    const { error } = await supabase
+      .from('products')
+      .update(payload)
+      .eq('id', id)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
     return this.getById(id)
   },
 
   async delete(id: string): Promise<void> {
-    const rawProducts = getStoredData<Product[]>('products', initialProducts)
-    const filtered = rawProducts.filter(p => p.id !== id)
-    saveStoredData('products', filtered)
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      throw new Error(error.message)
+    }
   },
 
   async updateStock(id: string, newQuantity: number): Promise<Product> {
-    const rawProducts = getStoredData<Product[]>('products', initialProducts)
-    const index = rawProducts.findIndex(p => p.id === id)
-    if (index === -1) throw new Error('Product not found')
-
-    const previousQuantity = rawProducts[index].quantity
+    const currentProduct = await this.getById(id)
+    const previousQuantity = currentProduct.quantity
     const clampedQty = Math.max(0, newQuantity)
     const changeQuantity = clampedQty - previousQuantity
 
-    rawProducts[index] = {
-      ...rawProducts[index],
-      quantity: clampedQty,
-      updated_at: new Date().toISOString()
-    }
-    saveStoredData('products', rawProducts)
+    const { error } = await supabase
+      .from('products')
+      .update({
+        quantity: clampedQty,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
 
-    // Save stock history
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    // Save stock history log
     if (changeQuantity !== 0) {
-      const history = getStoredData<StockHistory[]>('stock_history', initialStockHistory)
-      history.unshift({
-        id: generateId(),
+      await supabase.from('stock_history').insert([{
         product_id: id,
-        product_name: rawProducts[index].product_name,
+        product_name: currentProduct.product_name,
         previous_quantity: previousQuantity,
         change_quantity: changeQuantity,
-        new_quantity: clampedQty,
-        created_at: new Date().toISOString()
-      })
-      saveStoredData('stock_history', history)
+        new_quantity: clampedQty
+      }])
     }
 
     return this.getById(id)
   },
 
   async getStockHistory(): Promise<StockHistory[]> {
-    return getStoredData<StockHistory[]>('stock_history', initialStockHistory)
+    const { data, error } = await supabase
+      .from('stock_history')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error loading stock history:', error)
+      return []
+    }
+
+    return (data || []) as StockHistory[]
   }
 }

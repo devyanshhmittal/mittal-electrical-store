@@ -1,85 +1,107 @@
+import { supabase } from './supabase'
 import { CategorySpecification, ProductSpecification } from '../types'
-import { getStoredData, saveStoredData, initialCategorySpecs, initialProductSpecs, generateId } from './mockDB'
 
 export const specificationService = {
   async getByCategory(categoryId: string): Promise<CategorySpecification[]> {
-    const specs = getStoredData<CategorySpecification[]>('category_specs', initialCategorySpecs)
-    return specs.filter(s => s.category_id === categoryId)
+    const { data, error } = await supabase
+      .from('category_specifications')
+      .select('*')
+      .eq('category_id', categoryId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching specs:', error)
+      throw new Error(error.message)
+    }
+
+    return (data || []) as CategorySpecification[]
   },
 
   async create(spec: Omit<CategorySpecification, 'id' | 'created_at'>): Promise<CategorySpecification> {
-    const specs = getStoredData<CategorySpecification[]>('category_specs', initialCategorySpecs)
-    const newSpec: CategorySpecification = {
-      ...spec,
-      id: generateId(),
-      created_at: new Date().toISOString()
+    const { data, error } = await supabase
+      .from('category_specifications')
+      .insert([spec])
+      .select()
+      .single()
+
+    if (error) {
+      throw new Error(error.message)
     }
-    specs.push(newSpec)
-    saveStoredData('category_specs', specs)
-    return newSpec
+
+    return data as CategorySpecification
   },
 
   async update(id: string, spec: Partial<CategorySpecification>): Promise<CategorySpecification> {
-    const specs = getStoredData<CategorySpecification[]>('category_specs', initialCategorySpecs)
-    const index = specs.findIndex(s => s.id === id)
-    if (index === -1) throw new Error('Specification not found')
-    specs[index] = { ...specs[index], ...spec }
-    saveStoredData('category_specs', specs)
-    return specs[index]
+    const { data, error } = await supabase
+      .from('category_specifications')
+      .update(spec)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return data as CategorySpecification
   },
 
   async delete(id: string): Promise<void> {
-    const specs = getStoredData<CategorySpecification[]>('category_specs', initialCategorySpecs)
-    const filtered = specs.filter(s => s.id !== id)
-    saveStoredData('category_specs', filtered)
+    const { error } = await supabase
+      .from('category_specifications')
+      .delete()
+      .eq('id', id)
 
-    // Also delete any values associated with this specification
-    const prodSpecs = getStoredData<ProductSpecification[]>('product_specs', initialProductSpecs)
-    const filteredProdSpecs = prodSpecs.filter(ps => ps.specification_id !== id)
-    saveStoredData('product_specs', filteredProdSpecs)
+    if (error) {
+      throw new Error(error.message)
+    }
   }
 }
 
 export const productSpecificationService = {
   async getByProduct(productId: string): Promise<ProductSpecification[]> {
-    const prodSpecs = getStoredData<ProductSpecification[]>('product_specs', initialProductSpecs)
-    const catSpecs = getStoredData<CategorySpecification[]>('category_specs', initialCategorySpecs)
-    
-    return prodSpecs
-      .filter(ps => ps.product_id === productId)
-      .map(ps => ({
-        ...ps,
-        specification: catSpecs.find(cs => cs.id === ps.specification_id)
-      }))
+    const { data, error } = await supabase
+      .from('product_specifications')
+      .select(`
+        *,
+        specification:category_specifications(*)
+      `)
+      .eq('product_id', productId)
+
+    if (error) {
+      console.error('Error fetching product specs:', error)
+      throw new Error(error.message)
+    }
+
+    return (data || []) as ProductSpecification[]
   },
 
   async upsert(productId: string, specificationId: string, value: string): Promise<void> {
-    const prodSpecs = getStoredData<ProductSpecification[]>('product_specs', initialProductSpecs)
-    const index = prodSpecs.findIndex(ps => ps.product_id === productId && ps.specification_id === specificationId)
-    const now = new Date().toISOString()
-    
-    if (index >= 0) {
-      prodSpecs[index] = {
-        ...prodSpecs[index],
-        value,
-        updated_at: now
-      }
-    } else {
-      prodSpecs.push({
-        id: generateId(),
-        product_id: productId,
-        specification_id: specificationId,
-        value,
-        created_at: now,
-        updated_at: now
-      })
+    const { error } = await supabase
+      .from('product_specifications')
+      .upsert(
+        {
+          product_id: productId,
+          specification_id: specificationId,
+          value,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'product_id,specification_id' }
+      )
+
+    if (error) {
+      throw new Error(error.message)
     }
-    saveStoredData('product_specs', prodSpecs)
   },
 
   async deleteForProduct(productId: string): Promise<void> {
-    const prodSpecs = getStoredData<ProductSpecification[]>('product_specs', initialProductSpecs)
-    const filtered = prodSpecs.filter(ps => ps.product_id !== productId)
-    saveStoredData('product_specs', filtered)
+    const { error } = await supabase
+      .from('product_specifications')
+      .delete()
+      .eq('product_id', productId)
+
+    if (error) {
+      throw new Error(error.message)
+    }
   }
 }

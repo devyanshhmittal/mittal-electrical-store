@@ -1,53 +1,80 @@
+import { supabase } from './supabase'
 import { Category } from '../types'
-import { getStoredData, saveStoredData, initialCategories, generateId } from './mockDB'
 
 export const categoryService = {
   async getAll(): Promise<Category[]> {
-    const categories = getStoredData<Category[]>('categories', initialCategories)
-    return categories.sort((a, b) => a.name.localeCompare(b.name))
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching categories:', error)
+      throw new Error(error.message)
+    }
+
+    return (data || []) as Category[]
   },
 
   async getById(id: string): Promise<Category> {
-    const categories = getStoredData<Category[]>('categories', initialCategories)
-    const category = categories.find(c => c.id === id)
-    if (!category) throw new Error('Category not found')
-    return category
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Category not found')
+    }
+
+    return data as Category
   },
 
   async create(name: string): Promise<Category> {
-    const categories = getStoredData<Category[]>('categories', initialCategories)
-    const existing = categories.find(c => c.name.toLowerCase() === name.trim().toLowerCase())
-    if (existing) throw new Error('A category with this name already exists')
-    
-    const now = new Date().toISOString()
-    const newCategory: Category = {
-      id: generateId(),
-      name: name.trim(),
-      created_at: now,
-      updated_at: now
+    const trimmed = name.trim()
+    const { data, error } = await supabase
+      .from('categories')
+      .insert([{ name: trimmed }])
+      .select()
+      .single()
+
+    if (error) {
+      if (error.code === '23505') {
+        throw new Error('A category with this name already exists')
+      }
+      throw new Error(error.message)
     }
-    categories.push(newCategory)
-    saveStoredData('categories', categories)
-    return newCategory
+
+    return data as Category
   },
 
   async update(id: string, name: string): Promise<Category> {
-    const categories = getStoredData<Category[]>('categories', initialCategories)
-    const index = categories.findIndex(c => c.id === id)
-    if (index === -1) throw new Error('Category not found')
-    
-    categories[index] = {
-      ...categories[index],
-      name: name.trim(),
-      updated_at: new Date().toISOString()
+    const trimmed = name.trim()
+    const { data, error } = await supabase
+      .from('categories')
+      .update({ name: trimmed, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      if (error.code === '23505') {
+        throw new Error('A category with this name already exists')
+      }
+      throw new Error(error.message)
     }
-    saveStoredData('categories', categories)
-    return categories[index]
+
+    return data as Category
   },
 
   async delete(id: string): Promise<void> {
-    const categories = getStoredData<Category[]>('categories', initialCategories)
-    const filtered = categories.filter(c => c.id !== id)
-    saveStoredData('categories', filtered)
+    const { error } = await supabase
+      .from('categories')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      throw new Error(error.message)
+    }
   }
 }
