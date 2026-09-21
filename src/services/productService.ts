@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { Product, StockHistory } from '../types'
+import { getActiveUserId } from './authService'
 
 export interface ProductFilterOptions {
   categoryId?: string
@@ -11,6 +12,7 @@ export interface ProductFilterOptions {
 
 export const productService = {
   async getAll(filters?: ProductFilterOptions): Promise<Product[]> {
+    const userId = getActiveUserId()
     let query = supabase
       .from('products')
       .select(`
@@ -22,6 +24,7 @@ export const productService = {
           specification:category_specifications(*)
         )
       `)
+      .eq('user_id', userId)
 
     if (filters?.categoryId) {
       query = query.eq('category_id', filters.categoryId)
@@ -69,6 +72,7 @@ export const productService = {
   },
 
   async getById(id: string): Promise<Product> {
+    const userId = getActiveUserId()
     const { data, error } = await supabase
       .from('products')
       .select(`
@@ -81,6 +85,7 @@ export const productService = {
         )
       `)
       .eq('id', id)
+      .eq('user_id', userId)
       .single()
 
     if (error || !data) {
@@ -91,9 +96,11 @@ export const productService = {
   },
 
   async checkDuplicate(categoryId: string, brandId: string, modelNumber: string, colour: string, excludeId?: string): Promise<Product | null> {
+    const userId = getActiveUserId()
     let query = supabase
       .from('products')
       .select('*')
+      .eq('user_id', userId)
       .eq('category_id', categoryId)
       .eq('brand_id', brandId)
       .ilike('model_number', modelNumber.trim())
@@ -114,6 +121,7 @@ export const productService = {
   },
 
   async create(productData: Omit<Product, 'id' | 'created_at' | 'updated_at' | 'category' | 'brand' | 'specifications'>): Promise<Product> {
+    const userId = getActiveUserId()
     const { data, error } = await supabase
       .from('products')
       .insert([{
@@ -126,7 +134,8 @@ export const productService = {
         purchase_price: productData.purchase_price,
         selling_price: productData.selling_price,
         low_stock_threshold: productData.low_stock_threshold || 5,
-        image_url: productData.image_url || ''
+        image_url: productData.image_url || '',
+        user_id: userId
       }])
       .select()
       .single()
@@ -142,7 +151,8 @@ export const productService = {
         product_name: data.product_name,
         previous_quantity: 0,
         change_quantity: data.quantity,
-        new_quantity: data.quantity
+        new_quantity: data.quantity,
+        user_id: userId
       }])
     }
 
@@ -150,6 +160,7 @@ export const productService = {
   },
 
   async update(id: string, productData: Partial<Product>): Promise<Product> {
+    const userId = getActiveUserId()
     const payload: Record<string, any> = {
       updated_at: new Date().toISOString()
     }
@@ -169,6 +180,7 @@ export const productService = {
       .from('products')
       .update(payload)
       .eq('id', id)
+      .eq('user_id', userId)
 
     if (error) {
       throw new Error(error.message)
@@ -178,10 +190,12 @@ export const productService = {
   },
 
   async delete(id: string): Promise<void> {
+    const userId = getActiveUserId()
     const { error } = await supabase
       .from('products')
       .delete()
       .eq('id', id)
+      .eq('user_id', userId)
 
     if (error) {
       throw new Error(error.message)
@@ -189,6 +203,7 @@ export const productService = {
   },
 
   async updateStock(id: string, newQuantity: number): Promise<Product> {
+    const userId = getActiveUserId()
     const currentProduct = await this.getById(id)
     const previousQuantity = currentProduct.quantity
     const clampedQty = Math.max(0, newQuantity)
@@ -201,6 +216,7 @@ export const productService = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
+      .eq('user_id', userId)
 
     if (error) {
       throw new Error(error.message)
@@ -213,7 +229,8 @@ export const productService = {
         product_name: currentProduct.product_name,
         previous_quantity: previousQuantity,
         change_quantity: changeQuantity,
-        new_quantity: clampedQty
+        new_quantity: clampedQty,
+        user_id: userId
       }])
     }
 
@@ -221,9 +238,11 @@ export const productService = {
   },
 
   async getStockHistory(): Promise<StockHistory[]> {
+    const userId = getActiveUserId()
     const { data, error } = await supabase
       .from('stock_history')
       .select('*')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
     if (error) {

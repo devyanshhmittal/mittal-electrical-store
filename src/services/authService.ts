@@ -1,13 +1,27 @@
 import { supabase } from './supabase'
 import { User } from '../types'
+import { seedNewUserCatalog } from './seedService'
+
+export function getActiveUserId(): string {
+  try {
+    const stored = localStorage.getItem('mittal_store_auth_user')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return parsed.email || parsed.id || 'admin@mittalelectrical.com'
+    }
+  } catch (e) {
+    // fallback
+  }
+  return 'admin@mittalelectrical.com'
+}
 
 export const authService = {
   async signUp(email: string, password: string): Promise<{ user: User }> {
     if (!email || !password) {
-      throw new Error('Please provide both email and password')
+      throw new Error('Please enter both email and password.')
     }
     if (password.length < 6) {
-      throw new Error('Password must be at least 6 characters long')
+      throw new Error('Password must be at least 6 characters long.')
     }
 
     const cleanEmail = email.trim().toLowerCase()
@@ -27,6 +41,10 @@ export const authService = {
         email: cleanEmail
       }
       localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
+
+      // Auto-seed starter catalog for this newly created isolated store
+      await seedNewUserCatalog(cleanEmail)
+
       return { user }
     } catch (e: any) {
       const user: User = {
@@ -34,6 +52,7 @@ export const authService = {
         email: cleanEmail
       }
       localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
+      await seedNewUserCatalog(cleanEmail)
       return { user }
     }
   },
@@ -58,6 +77,7 @@ export const authService = {
           email: cleanEmail
         }
         localStorage.setItem('mittal_store_auth_user', JSON.stringify(user))
+        await seedNewUserCatalog(cleanEmail)
         return { user }
       }
 
